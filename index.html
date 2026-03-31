@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creative Web Game - Neon Orb</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: radial-gradient(circle at 20% 20%, #1b2735, #09101a); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    #game-wrapper { width: min(95vw, 760px); text-align: center; }
+    canvas { width: 100%; border: 3px solid #38b6ff; border-radius: 16px; background: #040f1d; display: block; margin-bottom: 12px; }
+    #info { margin: 8px 0; }
+    .button { cursor: pointer; background: linear-gradient(135deg, #34d6ff, #1a8cff); border: none; padding: 10px 20px; border-radius: 8px; color: #fff; font-weight: bold; letter-spacing: .5px; }
+    .button:hover { filter: brightness(1.2); }
+    #goal { font-size: 0.95rem; margin-top: 8px; color: #adf2ff; }
+  </style>
+</head>
+<body>
+  <div id="game-wrapper">
+    <h1>Neon Orb Collector</h1>
+    <canvas id="game" width="760" height="520"></canvas>
+    <div id="info">Score: <span id="score">0</span>  •  Level: <span id="level">1</span></div>
+    <button id="startBtn" class="button">Start / Restart</button>
+    <p id="goal">Move with mouse, collect orbs, avoid entering the malfunction zones (red).</p>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const levelEl = document.getElementById('level');
+    const startBtn = document.getElementById('startBtn');
+
+    const state = {
+      running: false,
+      orb: { x: 380, y: 260, r: 14 },
+      player: { x: 380, y: 260, r: 10 },
+      score: 0,
+      level: 1,
+      speed: 2.2,
+      dangerZones: [],
+      frames: 0
+    };
+
+    function rand(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    function createDangerZones(level) {
+      const zones = [];
+      for (let i = 0; i < Math.min(level + 1, 6); i++) {
+        zones.push({ x: rand(60, 700), y: rand(60, 420), w: rand(80, 140), h: rand(50, 100), vx: rand(-0.9, 0.9), vy: rand(-0.9,0.9) });
+      }
+      return zones;
+    }
+
+    function reset() {
+      state.running = true;
+      state.score = 0;
+      state.level = 1;
+      state.speed = 2.2;
+      state.player = { x: 380, y: 260, r: 10 };
+      state.orb = { x: rand(40, 720), y: rand(40, 480), r: 14 };
+      state.dangerZones = createDangerZones(state.level);
+      state.frames = 0;
+      scoreEl.innerText = '0';
+      levelEl.innerText = '1';
+      loop();
+    }
+
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function update() {
+      if (!state.running) return;
+      state.frames++;
+
+      state.dangerZones.forEach(zone => {
+        zone.x += zone.vx; zone.y += zone.vy;
+        if (zone.x < 10 || zone.x + zone.w > canvas.width-10) zone.vx *= -1;
+        if (zone.y < 10 || zone.y + zone.h > canvas.height-10) zone.vy *= -1;
+      });
+
+      if (distance(state.player, state.orb) < state.player.r + state.orb.r) {
+        state.score += 1;
+        state.level = Math.ceil(state.score / 4) + 1;
+        state.speed = 2.2 + state.level * 0.4;
+        state.orb = { x: rand(40, 720), y: rand(40, 480), r: 14 };
+        state.dangerZones = createDangerZones(state.level);
+        scoreEl.innerText = state.score;
+        levelEl.innerText = state.level;
+      }
+
+      const hitDanger = state.dangerZones.some(zone => {
+        return state.player.x+state.player.r > zone.x && state.player.x-state.player.r < zone.x+zone.w &&
+               state.player.y+state.player.r > zone.y && state.player.y-state.player.r < zone.y+zone.h;
+      });
+
+      if (hitDanger) {
+        state.running = false;
+        displayGameOver();
+      }
+
+      if (state.frames % 240 === 0 && state.running) {
+        document.body.style.background = `radial-gradient(circle at ${rand(20,80)}% ${rand(20,80)}%, #101c2b, #040a12)`;
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#093a61';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      state.dangerZones.forEach(zone => {
+        const g = ctx.createLinearGradient(zone.x, zone.y, zone.x+zone.w, zone.y+zone.h);
+        g.addColorStop(0, 'rgba(255,36,36,0.35)');
+        g.addColorStop(1, 'rgba(161,0,0,0.45)');
+        ctx.fillStyle = g;
+        ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+      });
+
+      ctx.beginPath();
+      const orbGradient = ctx.createRadialGradient(state.orb.x, state.orb.y, 2, state.orb.x, state.orb.y, state.orb.r);
+      orbGradient.addColorStop(0, '#d1ff5f');
+      orbGradient.addColorStop(1, '#12d68c');
+      ctx.fillStyle = orbGradient;
+      ctx.arc(state.orb.x, state.orb.y, state.orb.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      const playerGradient = ctx.createRadialGradient(state.player.x, state.player.y, 2, state.player.x, state.player.y, state.player.r);
+      playerGradient.addColorStop(0, '#ffffff');
+      playerGradient.addColorStop(1, '#4fcaf2');
+      ctx.fillStyle = playerGradient;
+      ctx.arc(state.player.x, state.player.y, state.player.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#69f3ff';
+      ctx.font = '14px Monospace';
+      ctx.fillText('Move your mouse to guide the orb collector', 12, 18);
+    }
+
+    function loop() {
+      if (!state.running) return;
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function displayGameOver() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ff5983';
+      ctx.font = 'bold 44px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 10);
+      ctx.font = '22px Arial';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('Final score: ' + state.score + ' - Press Start to retry', canvas.width / 2, canvas.height / 2 + 30);
+      ctx.textAlign = 'start';
+    }
+
+    canvas.addEventListener('mousemove', e => {
+      if (!state.running) return;
+      const rect = canvas.getBoundingClientRect();
+      const targetX = e.clientX - rect.left;
+      const targetY = e.clientY - rect.top;
+
+      const dx = targetX - state.player.x;
+      const dy = targetY - state.player.y;
+      const distanceFromTarget = Math.hypot(dx, dy);
+      if (distanceFromTarget > 0) {
+        state.player.x += (dx / distanceFromTarget) * state.speed;
+        state.player.y += (dy / distanceFromTarget) * state.speed;
+      }
+
+      state.player.x = Math.max(state.player.r, Math.min(canvas.width - state.player.r, state.player.x));
+      state.player.y = Math.max(state.player.r, Math.min(canvas.height - state.player.r, state.player.y));
+    });
+
+    startBtn.addEventListener('click', reset);
+
+    displayGameOver();
+  </script>
+</body>
+</html>
