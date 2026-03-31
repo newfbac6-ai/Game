@@ -2,26 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Creative Web Game - Neon Orb</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; background: radial-gradient(circle at 20% 20%, #1b2735, #09101a); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    #game-wrapper { width: min(95vw, 760px); text-align: center; }
-    canvas { width: 100%; border: 3px solid #38b6ff; border-radius: 16px; background: #040f1d; display: block; margin-bottom: 12px; }
-    #info { margin: 8px 0; }
+    body { font-family: 'Segoe UI', Roboto, Arial, sans-serif; background: radial-gradient(circle at 20% 20%, #1b2735, #09101a); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    #game-wrapper { width: min(90vw, 760px); max-width: 100%; text-align: center; padding: 10px; }
+    canvas { width: 100%; height: auto; border: 3px solid #38b6ff; border-radius: 16px; background: #040f1d; display: block; margin: 0 auto 12px; touch-action: none; }
+    #info { margin: 8px 0; font-size: 0.95rem; }
     .button { cursor: pointer; background: linear-gradient(135deg, #34d6ff, #1a8cff); border: none; padding: 10px 20px; border-radius: 8px; color: #fff; font-weight: bold; letter-spacing: .5px; }
     .button:hover { filter: brightness(1.2); }
-    #goal { font-size: 0.95rem; margin-top: 8px; color: #adf2ff; }
+    #goal { font-size: 0.93rem; margin-top: 8px; color: #adf2ff; }
+    #controls { margin-top: 8px; font-size: 0.9rem; }
+    #touchHint { margin: 10px; color: #8cd7ff; }
   </style>
 </head>
 <body>
   <div id="game-wrapper">
     <h1>Neon Orb Collector</h1>
-    <canvas id="game" width="760" height="520"></canvas>
-    <div id="info">Score: <span id="score">0</span>  •  Level: <span id="level">1</span></div>
+    <canvas id="game" width="760" height="520" aria-label="Neon Orb game"></canvas>
+    <div id="info">Score: <span id="score">0</span> • Level: <span id="level">1</span></div>
     <button id="startBtn" class="button">Start / Restart</button>
-    <p id="goal">Move with mouse, collect orbs, avoid entering the malfunction zones (red).</p>
+    <p id="goal">Collect glowing orbs, avoid red danger zones. Use mouse, touch drag, arrow/WASD, or gamepad.</p>
+    <div id="touchHint">Touch & drag to move on mobile.</div>
+    <div id="controls">Keyboard: ↑↓←→ / W A S D. Tap/click canvas to set target</div>
   </div>
 
   <script>
@@ -39,7 +43,9 @@
       level: 1,
       speed: 2.2,
       dangerZones: [],
-      frames: 0
+      frames: 0,
+      target: null,
+      moveKey: { x: 0, y: 0 }
     };
 
     function rand(min, max) {
@@ -49,9 +55,31 @@
     function createDangerZones(level) {
       const zones = [];
       for (let i = 0; i < Math.min(level + 1, 6); i++) {
-        zones.push({ x: rand(60, 700), y: rand(60, 420), w: rand(80, 140), h: rand(50, 100), vx: rand(-0.9, 0.9), vy: rand(-0.9,0.9) });
+        zones.push({ x: rand(60, 700), y: rand(60, 420), w: rand(80, 140), h: rand(50, 100), vx: rand(-0.9, 0.9), vy: rand(-0.9, 0.9) });
       }
       return zones;
+    }
+
+    function resizeCanvas() {
+      const container = canvas.parentElement.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(320, Math.min(760, container.width));
+      const targetHeight = Math.max(240, Math.min(520, container.width * 0.68));
+      canvas.style.width = targetWidth + 'px';
+      canvas.style.height = targetHeight + 'px';
+      canvas.width = Math.floor(targetWidth * ratio);
+      canvas.height = Math.floor(targetHeight * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      clampPositions();
+    }
+
+    function clampPositions() {
+      const maxX = canvas.width / (window.devicePixelRatio || 1) - state.player.r;
+      const maxY = canvas.height / (window.devicePixelRatio || 1) - state.player.r;
+      state.player.x = Math.max(state.player.r, Math.min(maxX, state.player.x));
+      state.player.y = Math.max(state.player.r, Math.min(maxY, state.player.y));
+      state.orb.x = Math.max(state.orb.r, Math.min(maxX, state.orb.x));
+      state.orb.y = Math.max(state.orb.r, Math.min(maxY, state.orb.y));
     }
 
     function reset() {
@@ -59,10 +87,12 @@
       state.score = 0;
       state.level = 1;
       state.speed = 2.2;
-      state.player = { x: 380, y: 260, r: 10 };
-      state.orb = { x: rand(40, 720), y: rand(40, 480), r: 14 };
+      state.player = { x: canvas.width / 2 / (window.devicePixelRatio || 1), y: canvas.height / 2 / (window.devicePixelRatio || 1), r: 10 };
+      state.orb = { x: rand(40, canvas.width / (window.devicePixelRatio || 1) - 40), y: rand(40, canvas.height / (window.devicePixelRatio || 1) - 40), r: 14 };
       state.dangerZones = createDangerZones(state.level);
       state.frames = 0;
+      state.target = null;
+      state.moveKey = { x: 0, y: 0 };
       scoreEl.innerText = '0';
       levelEl.innerText = '1';
       loop();
@@ -76,25 +106,46 @@
       if (!state.running) return;
       state.frames++;
 
+      const maxX = canvas.width / (window.devicePixelRatio || 1);
+      const maxY = canvas.height / (window.devicePixelRatio || 1);
+
       state.dangerZones.forEach(zone => {
         zone.x += zone.vx; zone.y += zone.vy;
-        if (zone.x < 10 || zone.x + zone.w > canvas.width-10) zone.vx *= -1;
-        if (zone.y < 10 || zone.y + zone.h > canvas.height-10) zone.vy *= -1;
+        if (zone.x < 10 || zone.x + zone.w > maxX - 10) zone.vx *= -1;
+        if (zone.y < 10 || zone.y + zone.h > maxY - 10) zone.vy *= -1;
       });
 
       if (distance(state.player, state.orb) < state.player.r + state.orb.r) {
         state.score += 1;
         state.level = Math.ceil(state.score / 4) + 1;
         state.speed = 2.2 + state.level * 0.4;
-        state.orb = { x: rand(40, 720), y: rand(40, 480), r: 14 };
+        state.orb = { x: rand(40, maxX - 40), y: rand(40, maxY - 40), r: 14 };
         state.dangerZones = createDangerZones(state.level);
         scoreEl.innerText = state.score;
         levelEl.innerText = state.level;
       }
 
+      if (state.target) {
+        const dx = state.target.x - state.player.x;
+        const dy = state.target.y - state.player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 3) {
+          state.player.x += (dx / dist) * state.speed;
+          state.player.y += (dy / dist) * state.speed;
+        } else {
+          state.target = null;
+        }
+      } else if (state.moveKey.x !== 0 || state.moveKey.y !== 0) {
+        state.player.x += state.moveKey.x * state.speed;
+        state.player.y += state.moveKey.y * state.speed;
+      }
+
+      state.player.x = Math.max(state.player.r, Math.min(maxX - state.player.r, state.player.x));
+      state.player.y = Math.max(state.player.r, Math.min(maxY - state.player.r, state.player.y));
+
       const hitDanger = state.dangerZones.some(zone => {
-        return state.player.x+state.player.r > zone.x && state.player.x-state.player.r < zone.x+zone.w &&
-               state.player.y+state.player.r > zone.y && state.player.y-state.player.r < zone.y+zone.h;
+        return state.player.x + state.player.r > zone.x && state.player.x - state.player.r < zone.x + zone.w &&
+               state.player.y + state.player.r > zone.y && state.player.y - state.player.r < zone.y + zone.h;
       });
 
       if (hitDanger) {
@@ -108,38 +159,43 @@
     }
 
     function draw() {
+      const scale = window.devicePixelRatio || 1;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.scale(1, 1);
 
       ctx.fillStyle = '#093a61';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
 
       state.dangerZones.forEach(zone => {
-        const g = ctx.createLinearGradient(zone.x, zone.y, zone.x+zone.w, zone.y+zone.h);
+        const g = ctx.createLinearGradient(zone.x, zone.y, zone.x + zone.w, zone.y + zone.h);
         g.addColorStop(0, 'rgba(255,36,36,0.35)');
         g.addColorStop(1, 'rgba(161,0,0,0.45)');
         ctx.fillStyle = g;
         ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
       });
 
-      ctx.beginPath();
       const orbGradient = ctx.createRadialGradient(state.orb.x, state.orb.y, 2, state.orb.x, state.orb.y, state.orb.r);
       orbGradient.addColorStop(0, '#d1ff5f');
       orbGradient.addColorStop(1, '#12d68c');
       ctx.fillStyle = orbGradient;
+      ctx.beginPath();
       ctx.arc(state.orb.x, state.orb.y, state.orb.r, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.beginPath();
       const playerGradient = ctx.createRadialGradient(state.player.x, state.player.y, 2, state.player.x, state.player.y, state.player.r);
       playerGradient.addColorStop(0, '#ffffff');
       playerGradient.addColorStop(1, '#4fcaf2');
       ctx.fillStyle = playerGradient;
+      ctx.beginPath();
       ctx.arc(state.player.x, state.player.y, state.player.r, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = '#69f3ff';
-      ctx.font = '14px Monospace';
-      ctx.fillText('Move your mouse to guide the orb collector', 12, 18);
+      ctx.font = '14px monospace';
+      ctx.fillText('Use touch/mouse, arrow/WASD, or gamepad to move', 12, 18);
+
+      ctx.restore();
     }
 
     function loop() {
@@ -155,34 +211,66 @@
       ctx.fillStyle = '#ff5983';
       ctx.font = 'bold 44px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 10);
+      ctx.fillText('GAME OVER', (canvas.width / (window.devicePixelRatio || 1)) / 2, (canvas.height / (window.devicePixelRatio || 1)) / 2 - 10);
       ctx.font = '22px Arial';
       ctx.fillStyle = '#fff';
-      ctx.fillText('Final score: ' + state.score + ' - Press Start to retry', canvas.width / 2, canvas.height / 2 + 30);
+      ctx.fillText('Final score: ' + state.score + ' - Press Start to retry', (canvas.width / (window.devicePixelRatio || 1)) / 2, (canvas.height / (window.devicePixelRatio || 1)) / 2 + 30);
       ctx.textAlign = 'start';
     }
 
-    canvas.addEventListener('mousemove', e => {
-      if (!state.running) return;
+    function setTargetFromEvent(e) {
       const rect = canvas.getBoundingClientRect();
-      const targetX = e.clientX - rect.left;
-      const targetY = e.clientY - rect.top;
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width) / (window.devicePixelRatio || 1);
+      const y = (e.clientY - rect.top) * (canvas.height / rect.height) / (window.devicePixelRatio || 1);
+      state.target = { x, y };
+    }
 
-      const dx = targetX - state.player.x;
-      const dy = targetY - state.player.y;
-      const distanceFromTarget = Math.hypot(dx, dy);
-      if (distanceFromTarget > 0) {
-        state.player.x += (dx / distanceFromTarget) * state.speed;
-        state.player.y += (dy / distanceFromTarget) * state.speed;
-      }
-
-      state.player.x = Math.max(state.player.r, Math.min(canvas.width - state.player.r, state.player.x));
-      state.player.y = Math.max(state.player.r, Math.min(canvas.height - state.player.r, state.player.y));
+    canvas.addEventListener('pointerdown', e => {
+      if (!state.running) return;
+      setTargetFromEvent(e);
     });
+
+    canvas.addEventListener('pointermove', e => {
+      if (!state.running || e.pointerType === 'mouse' && !e.buttons) return;
+      setTargetFromEvent(e);
+    });
+
+    canvas.addEventListener('touchstart', e => {
+      if (!state.running) return;
+      const touch = e.touches[0];
+      setTargetFromEvent(touch);
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', e => {
+      if (!state.running) return;
+      const touch = e.touches[0];
+      setTargetFromEvent(touch);
+      e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('keydown', e => {
+      if (!state.running) return;
+      const step = 1;
+      if (['ArrowUp', 'w', 'W'].includes(e.key)) state.moveKey.y = -step;
+      if (['ArrowDown', 's', 'S'].includes(e.key)) state.moveKey.y = +step;
+      if (['ArrowLeft', 'a', 'A'].includes(e.key)) state.moveKey.x = -step;
+      if (['ArrowRight', 'd', 'D'].includes(e.key)) state.moveKey.x = +step;
+      if (e.key === ' ') state.target = null;
+    });
+
+    window.addEventListener('keyup', e => {
+      if (!state.running) return;
+      if (['ArrowUp', 'w', 'W', 'ArrowDown', 's', 'S'].includes(e.key)) state.moveKey.y = 0;
+      if (['ArrowLeft', 'a', 'A', 'ArrowRight', 'd', 'D'].includes(e.key)) state.moveKey.x = 0;
+    });
+
+    window.addEventListener('resize', resizeCanvas);
 
     startBtn.addEventListener('click', reset);
 
-    displayGameOver();
+    resizeCanvas();
+    reset();
   </script>
 </body>
 </html>
